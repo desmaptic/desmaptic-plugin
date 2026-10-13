@@ -1,0 +1,15 @@
+{
+  "name": "desmaptic",
+  "description": "Desmaptic for Claude Code and Codex: the Desmaptic MCP server's connection and the widget-drawing skill.",
+  "owner": {
+    "name": "Desmaptic",
+    "url": "https://desmaptic.com"
+  },
+  "plugins": [
+    {
+      "name": "desmaptic",
+      "source": "./",
+      "description": "Build and edit the buttons on your Desmaptic deck — iPhone or iPad buttons that control your Mac — with the widget-drawing skill. Needs Desmaptic Agent on the Mac."
+    }
+  ]
+}

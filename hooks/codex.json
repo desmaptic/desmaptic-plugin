@@ -1,0 +1,13 @@
+{
+  "description": "Desmaptic session status: each event updates this session's card on the AI Sessions page of the phone.",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 5 }] }],
+    "Interrupt": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 3 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "/bin/zsh -f \"${PLUGIN_ROOT}/hooks/session-status\" codex", "timeout": 3 }] }]
+  }
+}

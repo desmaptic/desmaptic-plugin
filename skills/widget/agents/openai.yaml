@@ -1,0 +1,5 @@
+interface:
+  display_name: "Desmaptic Widget"
+  short_description: "Build one live widget from a description"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,31 @@
+{
+  "name": "desmaptic",
+  "version": "2.1.0",
+  "description": "Build and edit the buttons on your Desmaptic deck — iPhone or iPad buttons that control your Mac — with the widget-drawing skill. Needs Desmaptic Agent on the Mac.",
+  "author": {
+    "name": "Desmaptic",
+    "url": "https://desmaptic.com"
+  },
+  "homepage": "https://desmaptic.com",
+  "repository": "https://github.com/desmaptic/desmaptic-plugin",
+  "license": "MIT AND LicenseRef-PolyForm-Shield-1.0.0",
+  "keywords": ["macos", "iphone", "ipad", "buttons", "widgets", "automation", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-mcp.json",
+  "hooks": "./hooks/codex.json",
+  "interface": {
+    "displayName": "Desmaptic",
+    "shortDescription": "Build and edit iPhone and iPad buttons that control your Mac",
+    "longDescription": "Desmaptic turns an iPhone or iPad into a deck of buttons that control your Mac: launch apps, press shortcuts, run Shortcuts and scripts, and show live widgets such as CPU load, a timer or what's playing. This plugin connects Codex to the Desmaptic MCP server built into Desmaptic Agent and adds the skill for drawing widgets. No button changes until you tap Accept on the phone.",
+    "developerName": "Desmaptic",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://desmaptic.com",
+    "privacyPolicyURL": "https://desmaptic.com/privacy",
+    "termsOfServiceURL": "https://desmaptic.com/terms",
+    "defaultPrompt": [
+      "Add a button that shows free disk space to my Desmaptic deck",
+      "Make a Desmaptic page for my video calls"
+    ]
+  }
+}

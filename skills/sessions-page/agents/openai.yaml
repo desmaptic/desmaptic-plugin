@@ -1,0 +1,5 @@
+interface:
+  display_name: "Desmaptic Sessions Page"
+  short_description: "Show Claude Code and Codex sessions on the deck"
+policy:
+  allow_implicit_invocation: false

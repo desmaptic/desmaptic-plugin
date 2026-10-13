@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "desmaptic": {
+      "command": "/bin/bash",
+      "args": ["-p", "${CLAUDE_PLUGIN_ROOT}/scripts/desmaptic-mcp"]
+    }
+  }
+}

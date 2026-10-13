@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "desmaptic": {
+      "command": "/bin/bash",
+      "args": ["-p", "./scripts/desmaptic-mcp"],
+      "cwd": "."
+    }
+  }
+}

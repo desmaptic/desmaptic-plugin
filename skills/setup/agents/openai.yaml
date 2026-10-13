@@ -1,0 +1,5 @@
+interface:
+  display_name: "Desmaptic Setup"
+  short_description: "Check the Mac agent and the phone connection"
+policy:
+  allow_implicit_invocation: false

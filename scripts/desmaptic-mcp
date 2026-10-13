@@ -1,0 +1,147 @@
+#!/bin/bash -p
+#
+# The Desmaptic MCP server's launcher: starts the server built into Desmaptic Agent (`<agent> --mcp`, stdio).
+# Neither the plugin (Claude Code, Codex) nor the MCPB package (Claude Desktop) carries a server of its own —
+# the agent's tools need the running agent anyway. One file serves both: the plugin runs it from here, the
+# MCPB package carries it byte for byte (scripts/build-mcpb.sh).
+#
+# Finds the release agent (bundle id com.desmaptic.agent) in /Applications, ~/Applications, then through
+# Spotlight (a copy moved elsewhere or renamed), skipping copies in the Trash. Only when there is none
+# anywhere, a development build (com.desmaptic.agent.dev): the one running in this login session, else
+# the most recently built one of those the same search finds (a developer's Mac holds a Debug build per
+# worktree; the first Spotlight hit would be any of them). A candidate runs only when its
+# code signature is valid and made by our team (Developer ID for releases, Apple Development for
+# development builds): Spotlight also finds bundles on external drives, in cloned repos and unpacked
+# archives, and an Info.plist alone is no proof of whose code it is. A candidate that fails is skipped,
+# the search goes on. Without an agent it answers the client's first request (`initialize`) with a
+# JSON-RPC error that says where to download the agent, repeats it on stderr (the client's server log)
+# and exits 1.
+#
+# Runs as `/bin/bash -p <this file>` (the plugin's .mcp.json for Claude Code and .codex-mcp.json for
+# Codex, the package's manifest.json → server.mcp_config): it does not rely on the client keeping the
+# executable bit. Privileged mode (-p) is
+# what keeps the environment from running code here: without -p bash imports exported functions
+# (BASH_FUNC_printf%% replaces `printf`), honours SHELLOPTS (xtrace runs $PS4) and sources BASH_ENV —
+# whoever sets this process's environment could start another program. /bin/bash, not /bin/sh: /bin/sh
+# runs whatever /private/var/select/sh names, and dash refuses -p. macOS bash 3.2 still reads CDPATH
+# under -p: no relative `cd` here. The script itself stays POSIX sh.
+#
+# Where it looks and whose signature it accepts are fixed here: no variable of its own changes them,
+# so the environment cannot turn the signature check off or point the search at another program. HOME
+# still names ~/Applications — a bundle found there passes the same signature check. Tests run a copy
+# of this file with the APP_DIRS, SPOTLIGHT, RUNNING and REQUIREMENT lines replaced (MCPBLauncher).
+
+AGENT_BUNDLE_ID="com.desmaptic.agent"
+# A development build of the agent (Debug): taken only when no release agent is found.
+DEV_BUNDLE_ID="com.desmaptic.agent.dev"
+DOWNLOAD_URL="https://desmaptic.com/agent"
+# The agent's file name; Spotlight finds a renamed copy. An agent under an earlier bundle id is not
+# this one: it predates the package.
+APP_NAMES="Desmaptic Agent.app"
+APP_DIRS="/Applications:$HOME/Applications"
+SPOTLIGHT=1
+# Asks Launch Services for the running development agent's bundle.
+RUNNING=1
+# Signed by the team that signs the agent (Developer ID for releases, Apple Development for development builds).
+REQUIREMENT='anchor apple generic and certificate leaf[subject.OU] = "GRFP8RCXX9"'
+
+MISSING_MESSAGE="Desmaptic Agent is not installed on this Mac. The Desmaptic MCP server is built into it: download it from $DOWNLOAD_URL, move it to Applications, open it once and pair your iPhone or iPad, then restart this app."
+
+plist_value() {
+    /usr/libexec/PlistBuddy -c "Print :$2" "$1/Contents/Info.plist" 2>/dev/null
+}
+
+# Prints the agent's executable when $1 is an agent bundle with bundle id $2 outside the Trash, signed by the team.
+agent_executable() {
+    case "$1" in
+        */.Trash/*|*/.Trashes/*) return 1 ;;
+    esac
+    [ "$(plist_value "$1" CFBundleIdentifier)" = "$2" ] || return 1
+    executable="$(plist_value "$1" CFBundleExecutable)"
+    [ -n "$executable" ] && [ -x "$1/Contents/MacOS/$executable" ] || return 1
+    /usr/bin/codesign --verify --strict -R="$REQUIREMENT" "$1" >/dev/null 2>&1 || return 1
+    printf '%s\n' "$1/Contents/MacOS/$executable"
+}
+
+# Prints the first agent with bundle id $1 found, nothing when there is none.
+find_agent() {
+    old_ifs="$IFS"
+    IFS=:
+    for dir in $APP_DIRS; do
+        for name in $APP_NAMES; do
+            if [ -n "$dir" ] && agent_executable "$dir/$name" "$1"; then
+                IFS="$old_ifs"
+                return
+            fi
+        done
+    done
+    IFS="$old_ifs"
+    [ "$SPOTLIGHT" = "1" ] || return
+    /usr/bin/mdfind "kMDItemCFBundleIdentifier == '$1'" 2>/dev/null | while IFS= read -r app; do
+        agent_executable "$app" "$1" && break
+    done
+}
+
+# Prints the bundles of the running apps with bundle id $1 in this login session (Launch Services).
+running_bundles() {
+    [ "$RUNNING" = "1" ] || return
+    /usr/bin/lsappinfo find "bundleid=$1" 2>/dev/null | /usr/bin/tr ' ' '\n' \
+        | /usr/bin/sed -n -E 's/^(ASN:0x[0-9a-fA-F]+-0x[0-9a-fA-F]+-).*/\1/p' | while IFS= read -r asn; do
+            /usr/bin/lsappinfo info -only bundlepath "$asn" 2>/dev/null \
+                | /usr/bin/sed -n 's/^"LSBundlePath"="\(.*\)"$/\1/p'
+        done
+}
+
+# Prints every bundle the search looks at for bundle id $1: the folders, then Spotlight.
+candidate_bundles() {
+    old_ifs="$IFS"
+    IFS=:
+    for dir in $APP_DIRS; do
+        for name in $APP_NAMES; do
+            [ -n "$dir" ] && printf '%s\n' "$dir/$name"
+        done
+    done
+    IFS="$old_ifs"
+    [ "$SPOTLIGHT" = "1" ] || return
+    /usr/bin/mdfind "kMDItemCFBundleIdentifier == '$1'" 2>/dev/null
+}
+
+# Prints the development agent: the running one, else the candidate whose executable changed last
+# (the folders' order breaks a tie); nothing when there is none.
+find_dev_agent() {
+    running="$(running_bundles "$DEV_BUNDLE_ID" | while IFS= read -r app; do
+        agent_executable "$app" "$DEV_BUNDLE_ID" && break
+    done)"
+    if [ -n "$running" ]; then
+        printf '%s\n' "$running"
+        return
+    fi
+    candidate_bundles "$DEV_BUNDLE_ID" | {
+        newest=""
+        newest_time=-1
+        while IFS= read -r app; do
+            executable="$(agent_executable "$app" "$DEV_BUNDLE_ID")" || continue
+            time="$(/usr/bin/stat -f %m "$executable" 2>/dev/null)" || continue
+            if [ "$time" -gt "$newest_time" ]; then
+                newest="$executable"
+                newest_time="$time"
+            fi
+        done
+        [ -z "$newest" ] || printf '%s\n' "$newest"
+    }
+}
+
+agent="$(find_agent "$AGENT_BUNDLE_ID")"
+[ -n "$agent" ] || agent="$(find_dev_agent)"
+if [ -n "$agent" ]; then
+    exec "$agent" --mcp
+fi
+
+printf '%s\n' "$MISSING_MESSAGE" >&2
+# The client speaks first; answer its `initialize` so the client shows the reason, not just
+# "server disconnected". Nothing to wait for when a person runs this in a terminal.
+if [ ! -t 0 ] && IFS= read -r request; then
+    id="$(printf '%s\n' "$request" | /usr/bin/sed -E -n 's/.*"id"[[:space:]]*:[[:space:]]*("[^"]*"|-?[0-9]+).*/\1/p' | /usr/bin/head -n 1)"
+    printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"%s"}}\n' "${id:-null}" "$MISSING_MESSAGE"
+fi
+exit 1

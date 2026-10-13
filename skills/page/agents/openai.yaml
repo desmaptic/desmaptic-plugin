@@ -1,0 +1,5 @@
+interface:
+  display_name: "Desmaptic Page"
+  short_description: "Build a deck page for an app or a task"
+policy:
+  allow_implicit_invocation: false

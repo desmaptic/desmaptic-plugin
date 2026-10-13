@@ -1,0 +1,27 @@
+{
+  "name": "desmaptic",
+  "displayName": "Desmaptic",
+  "version": "2.1.0",
+  "description": "Build and edit the buttons on your Desmaptic deck — iPhone or iPad buttons that control your Mac — with the widget-drawing skill. Needs Desmaptic Agent on the Mac.",
+  "author": {
+    "name": "Desmaptic",
+    "url": "https://desmaptic.com"
+  },
+  "homepage": "https://desmaptic.com",
+  "repository": "https://github.com/desmaptic/desmaptic-plugin",
+  "license": "MIT AND LicenseRef-PolyForm-Shield-1.0.0",
+  "keywords": ["macos", "iphone", "ipad", "buttons", "widgets", "automation", "mcp"],
+  "documentationUrl": "https://desmaptic.com/docs",
+  "supportUrl": "https://desmaptic.com/docs",
+  "privacyPolicyUrl": "https://desmaptic.com/privacy",
+  "termsOfServiceUrl": "https://desmaptic.com/terms",
+  "hooks": "./hooks/claude-code.json",
+  "userConfig": {
+    "notify_permission": {
+      "type": "boolean",
+      "title": "Notify when a session waits for permission",
+      "description": "Send a Desmaptic notification to your phone when a Claude Code session starts waiting for your permission. Needs the AI Sessions page.",
+      "default": false
+    }
+  }
+}

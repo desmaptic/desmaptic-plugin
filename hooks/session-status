@@ -1,0 +1,226 @@
+#!/bin/zsh -f
+# Desmaptic session status: marks what an AI coding session is doing, for the "AI Sessions" page on the phone.
+#
+# Claude Code starts it on each session event as `/bin/zsh -f <this file> claude` (hooks/claude-code.json), Codex as
+# `/bin/zsh -f <this file> codex` (hooks/codex.json, inside the user's login shell), the event's JSON on stdin. It writes one small file, AISessions/<session_id>.json in Desmaptic's script storage: the
+# tool, the state, the project folder's name, the app the session runs in, which agent waits for permission (the main
+# one or a subagent's id), the time and when and how its last turn finished. Never the prompt, a command, a tool's input or a message. The page's startup script reads that folder (so does the Gallery's Long Jobs widget); until
+# one of them is installed the folder does not exist and the hook exits at once, having read nothing.
+#
+# Beside the record it keeps where the session lives, so the Mac can type an answer into it: AISessions/<session_id>.addr
+# — the tmux pane, the iTerm2 session, the tty and pid of the claude or codex process, the app, Codex's thread — or a
+# plain "nowhere to type" (a VS Code or Cursor terminal, a desktop app). No folder, no prompt. Written whenever the
+# record is, removed with it.
+#
+# It prints nothing, ever: both tools read a hook's stdout — a PermissionRequest hook's answer would allow or deny
+# for the user, and plain text after a prompt or at start goes into the model's context. It always exits 0.
+#
+# With the plugin's "notify_permission" option on, entering "waiting for permission" also sends a notification
+# through the agent's /api/notify; curl reads the token from the agent's token file, so it is never on a command line.
+
+exec >/dev/null 2>&1
+input=$(/bin/cat)
+exec </dev/null
+
+DIR="$HOME/Library/Application Support/Desmaptic/ScriptStorage/AISessions"
+TOKEN_FILE="$HOME/.desmaptic-mcp-token"
+API="http://127.0.0.1:9848/api"
+CURL=/usr/bin/curl
+# The Mac's languages, for the notification's words.
+languages() { /usr/bin/defaults read -g AppleLanguages }
+# One process: its parent's pid, its terminal and its command.
+process() { /bin/ps -o ppid=,tty=,comm= -p "$1" }
+# One process's arguments: read only for a node process, compared and never kept.
+arguments() { /bin/ps -o args= -p "$1" }
+
+tool=$1
+[[ $tool == (claude|codex) && -n $HOME && -d $DIR && -w $DIR ]] || exit 0
+
+# A top-level key of the event; empty when it is missing, null or not text. A key path is split at dots, so a
+# top-level name never reaches into a nested object (a tool's input carrying its own "session_id").
+field() { print -rn -- "$input" | /usr/bin/plutil -extract "$1" raw -o - - }
+
+event=$(field hook_event_name)
+notice=""
+case $event in
+  SessionStart)
+    # A compacted session goes on as it was.
+    [[ $(field source) == compact ]] && exit 0
+    # Codex starts a session inside its first turn, the prompt already sent; Claude Code at once, waiting for one.
+    [[ $tool == codex ]] && state=working || state=input ;;
+  UserPromptSubmit|PreToolUse|PostToolUse|PostToolUseFailure) state=working ;;
+  PermissionRequest) state=permission ;;
+  Notification)
+    notice=$(field notification_type)
+    case $notice in
+      permission_prompt) state=permission ;;
+      idle_prompt|elicitation_dialog) state=input ;;
+      *) exit 0 ;;
+    esac ;;
+  Stop) state=done ;;
+  # Codex's turn stopped by the user (Esc): the session waits for the next prompt, like after a finished turn.
+  Interrupt) state=done ;;
+  StopFailure) state=error ;;
+  SessionEnd) state=closed ;;
+  *) exit 0 ;;
+esac
+
+# A subagent's tool and permission events are its session's: the session waits while its subagent does. Its other
+# events (a start, an end) are the subagent's own, never the session's.
+agent=$(field agent_id)
+[[ -z $agent || $agent =~ '^[A-Za-z0-9_-]{1,128}$' ]] || agent=subagent
+if [[ -n $agent ]]; then
+  case $event in PreToolUse|PostToolUse|PostToolUseFailure|PermissionRequest|Notification) ;; *) exit 0 ;; esac
+fi
+# In auto, bypass and don't-ask modes Claude Code decides without the user: a permission event there asks nobody.
+if [[ $state == permission ]]; then
+  case $(field permission_mode) in auto|bypassPermissions|dontAsk) exit 0 ;; esac
+fi
+
+sid=$(field session_id)
+[[ $sid =~ '^[A-Za-z0-9_-]{1,128}$' ]] || exit 0
+file="$DIR/$sid.json"
+address="$DIR/$sid.addr"
+
+previous=""
+[[ -f $file ]] && previous=$(<"$file")
+# Unchanged: the file keeps the time the session entered this state. Only the address is written then: on a start
+# (a resumed session may live in another terminal now) or when it is missing (a session from before addresses).
+same=0
+[[ $previous == *"\"state\":\"$state\""* ]] && same=1
+(( same )) && [[ $state == closed || ( -f $address && $event != SessionStart ) ]] && exit 0
+# Who waits for permission: "main" or the subagent's id; unknown for a Notification, which names nobody.
+asker=""
+[[ $event == PermissionRequest ]] && asker=${agent:-main}
+# While one agent waits for permission, a parallel subagent's tool events do not hide the wait; the waiting agent's
+# own next event, or any of the main session's, ends it.
+if [[ -n $agent && $state == working && $previous == *'"state":"permission"'* && $previous != *'"asker":""'* \
+      && $previous != *"\"asker\":\"$agent\""* ]]; then
+  exit 0
+fi
+
+# The project folder's name, as JSON text: escaped, control characters replaced, at most 80 characters.
+# Codex has no project variable; one inherited from a Claude Code session that started Codex is not this session's.
+project=$(field cwd)
+[[ $tool == claude && -n ${CLAUDE_PROJECT_DIR:-} ]] && project=$CLAUDE_PROJECT_DIR
+project=${${project%/}:t}
+project=${project[1,80]}
+project=${project//\\/\\\\}
+project=${project//\"/\\\"}
+project=${project//[[:cntrl:]]/?}
+
+# The app the session runs in (Terminal, iTerm, VS Code…): a tap on the card brings it forward.
+app=${__CFBundleIdentifier:-}
+[[ $app =~ '^[A-Za-z0-9.-]{1,155}$' ]] || app=""
+
+# Where to type an answer: AISessions/<session_id>.addr, owner-only like the record, removed when the session closes.
+# "via" — tmux (the pane and its server's socket), iterm2 (the session id), tty (Terminal and Ghostty: the tty and pid
+# of the claude or codex process) or none, with "why": editor (a VS Code or Cursor terminal), app (a desktop app, or no
+# terminal at all) or terminal (one the Mac does not type into, a multiplexer it cannot address, or a tty whose
+# claude or codex process was not found). Codex's "thread" is its session id, the one
+# `codex queue --thread` takes. Every value is checked against a plain pattern: nothing from the event but the id.
+write_address() {
+  if [[ $state == closed ]]; then zf_rm -f -- "$address"; return; fi
+  local pid=$$ parent ptty comm tty="" owner="" i
+  local -a w a
+  # The session's process is an ancestor of the hook (its shell in between); its tty is the session's terminal.
+  for (( i = 0; i < 8 && pid > 1; i++ )); do
+    w=( ${=$(process $pid)} )
+    parent=${w[1]:-} ptty=${w[2]:-} comm=${(j: :)w[3,-1]}
+    [[ $ptty =~ '^ttys[0-9]{1,4}$' ]] || ptty=""
+    [[ -z $tty && -n $ptty ]] && tty=/dev/$ptty
+    # Claude Code installed with npm runs as `node <…>/claude`; it renames itself `claude` once it starts.
+    [[ ${comm:t} == node ]] && a=( ${=$(arguments $pid)} ) || a=()
+    if [[ ${comm:t} == $tool || ${${a[1]:-}:t} == $tool || ${${a[2]:-}:t} == $tool ]]; then
+      owner=$pid
+      [[ -n $ptty ]] && tty=/dev/$ptty
+      break
+    fi
+    [[ $parent =~ '^[0-9]{1,9}$' ]] || break
+    pid=$parent
+  done
+
+  local terminal=${TERM_PROGRAM:-} pane=${TMUX_PANE:-} socket=${${TMUX:-}%%,*} iterm=${ITERM_SESSION_ID:-}
+  [[ $pane =~ '^%[0-9]{1,9}$' && $socket =~ '^/[A-Za-z0-9._/-]{1,255}$' ]] || pane="" socket=""
+  [[ $iterm =~ '^[A-Za-z0-9]{1,32}:[0-9A-Fa-f-]{36}$' ]] || iterm=""
+  local via=none why=""
+  # tmux first: its pane takes keys wherever its client runs, in an editor's terminal too.
+  if [[ -n $pane && $terminal != vscode ]]; then via=tmux
+  elif [[ $terminal == vscode || $app == (com.microsoft.VSCode|com.microsoft.VSCodeInsiders|com.todesktop.230313mzl4w4u92) ]]; then why=editor
+  # tmux without a plain pane and socket, or GNU screen: the tty is the multiplexer's, keys there may reach another window.
+  elif [[ -n ${TMUX:-}${TMUX_PANE:-}${STY:-} ]]; then why=terminal
+  elif [[ $app == com.anthropic.claudefordesktop || -z $tty ]]; then why=app
+  elif [[ -n $iterm && ( $terminal == iTerm.app || $app == com.googlecode.iterm2 ) ]]; then via=iterm2
+  # A tty is typed into only when its process is the session's: a reader checks that pid before typing.
+  elif [[ -n $owner && ( $terminal == (Apple_Terminal|ghostty) || $app == (com.apple.Terminal|com.mitchellh.ghostty) ) ]]; then via=tty
+  else why=terminal
+  fi
+  [[ $via == tmux ]] || pane="" socket=""
+  [[ $via == iterm2 ]] || iterm=""
+  local thread=""
+  [[ $tool == codex ]] && thread=$sid
+
+  print -r -- "{\"tool\":\"$tool\",\"app\":\"$app\",\"via\":\"$via\",\"why\":\"$why\",\"tmux_pane\":\"$pane\",\"tmux_socket\":\"$socket\",\"iterm_session\":\"$iterm\",\"tty\":\"$tty\",\"pid\":\"$owner\",\"thread\":\"$thread\"}" >| "$temporary.addr" \
+    && zf_mv -f "$temporary.addr" "$address" || zf_rm -f "$temporary.addr"
+}
+
+zmodload zsh/datetime zsh/files
+umask 077
+temporary="$DIR/.$sid.$$"
+# When the session last finished a turn, and how (done or error): set by a finish, carried by a later input (Claude
+# Code's idle notice about a minute after Stop) and by closed, cleared by working and permission — a turn under way, so
+# an input after them is a question mid-turn (an MCP form). 0 and "" when nothing finished since the last turn began.
+finished=0 result=""
+case $state in
+  done|error) finished=$EPOCHSECONDS result=$state ;;
+  input|closed)
+    if [[ $previous =~ '"finished":([0-9]{1,12})' ]]; then
+      finished=$match[1]
+      [[ $previous =~ '"result":"(done|error)"' ]] && result=$match[1] || finished=0
+    # An older hook's record keeps no finish: its done or error is one, entered at its "updated".
+    elif [[ $previous =~ '"state":"(done|error)"' ]]; then
+      result=$match[1]
+      [[ $previous =~ '"updated":([0-9]{1,12})' ]] && finished=$match[1] || result=""
+    fi
+    # The idle notice comes once the session has sat at its prompt for about a minute: the turn is over even without a
+    # Stop — Claude Code fires none when the user stops a turn with Esc, and a background subagent's tools after Stop
+    # clear the finish. An input it follows is never rewritten, so a question mid-turn stays one.
+    if [[ $notice == idle_prompt ]] && (( finished == 0 )); then
+      finished=$(( EPOCHSECONDS - 60 )) result=done
+      [[ $previous =~ '"updated":([0-9]{1,12})' ]] && (( match[1] > finished )) && finished=$match[1]
+    fi ;;
+esac
+if (( ! same )); then
+  print -r -- "{\"tool\":\"$tool\",\"state\":\"$state\",\"project\":\"$project\",\"app\":\"$app\",\"asker\":\"$asker\",\"updated\":$EPOCHSECONDS,\"finished\":$finished,\"result\":\"$result\"}" >| "$temporary" \
+    && zf_mv -f "$temporary" "$file" || { zf_rm -f "$temporary"; exit 0 }
+fi
+
+write_address
+# An address outlives its record only until another session's address is written (a change of state, a start, a
+# missing address): the page and Long Jobs remove records.
+for f in "$DIR"/*.addr(N.); do [[ -e ${f%.addr}.json ]] || zf_rm -f -- "$f"; done
+
+(( same )) && exit 0
+[[ $state == permission ]] || exit 0
+[[ ${CLAUDE_PLUGIN_OPTION_NOTIFY_PERMISSION:-} == (true|1) ]] || exit 0
+[[ -f $TOKEN_FILE ]] || exit 0
+name="Claude Code"
+[[ $tool == codex ]] && name="Codex"
+# A tap on the notification opens the page: its first card's id, as the page's script wrote it.
+cell=""
+[[ -f $DIR/.page-cell ]] && cell=$(<"$DIR/.page-cell")
+[[ $cell =~ '^[0-9A-Fa-f-]{36}$' ]] && cell=",\"cellId\":\"$cell\"" || cell=""
+# The words in the Mac's first language (the app's five; English otherwise).
+language=${${(f)"$(languages 2>/dev/null)"}[2]:-en}
+case ${${language//[[:space:]\",]/}[1,2]} in
+  ru) waiting="Ждёт разрешения в $project" ;;
+  de) waiting="Wartet auf Erlaubnis in $project" ;;
+  es) waiting="Pide permiso en $project" ;;
+  fr) waiting="Attend une autorisation dans $project" ;;
+  *)  waiting="Waiting for permission in $project" ;;
+esac
+body="{\"title\":\"$name\",\"body\":\"$waiting\",\"id\":\"ai-session-$sid\"$cell}"
+print -rn -- "$body" | $CURL -q -s -o /dev/null --connect-timeout 1 -m 2 \
+  --variable "DESMAPTIC_TOKEN@$TOKEN_FILE" --expand-header 'Authorization: Bearer {{DESMAPTIC_TOKEN:trim}}' \
+  -H 'Content-Type: application/json' --data-binary @- "$API/notify"
+exit 0
