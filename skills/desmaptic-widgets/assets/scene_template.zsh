@@ -24,12 +24,18 @@ PERIOD = 2.0                                # seconds between frames (a scene gl
 GLIDE = 1.2                                 # every glide lasts 1.2 periods (1.2–1.35): over Wi-Fi frames come in bursts, up to ~0.15 s
                                             # late, and a glide still running is taken over at the same speed, while one that already
                                             # ended would stop the motion for a moment. The price: everything trails its frames by a fifth of a step.
-W, H, HORIZON = 800.0, 400.0, 300.0         # one button = 100 x 100 world units
+GAP = 12.5                                  # the gap between two buttons in world units, a window being 100: main() takes it from
+                                            # GET /api/view (100 x cellGap / cellSize); 12.5 is the phone's 10 pt gap on 80 pt cells
 STORE = os.path.join(os.environ.get("DESMAPTIC_STORAGE") or os.path.expanduser("~/Library/Application Support/Desmaptic/ScriptStorage"), "scene")   # never /tmp
 
 
 def n(v): return ("%.1f" % v).rstrip("0").rstrip(".")
-def window(cx, cy): return (cx * 100, (3 - cy) * 100, cx * 100 + 100, (3 - cy) * 100 + 100)
+def window(cx, cy):
+    """The 100 x 100 part of the world button (cx, cy) shows. The windows lie as far apart as the buttons on screen, gap
+    included: a mover crossing a gap is hidden behind it, as behind a window frame, and its halves line up. Windows laid
+    edge to edge (cx * 100) would draw it on both sides of the gap at once, its halves a gap apart."""
+    x, y = cx * (100 + GAP), (3 - cy) * (100 + GAP)
+    return (x, y, x + 100, y + 100)
 def touches(box, cell, pad=6): return not (box[2] < cell[0] - pad or box[0] > cell[2] + pad or box[3] < cell[1] - pad or box[1] > cell[3] + pad)
 
 
@@ -50,7 +56,7 @@ def cycle(index, count, step, steps):
 
 
 rnd = random.Random(3)
-STARS = {(cx, cy): [(cx * 100 + rnd.uniform(8, 92), (3 - cy) * 100 + rnd.uniform(8, 92), rnd.uniform(0.8, 1.6), rnd.uniform(0, 6.28))
+STARS = {(cx, cy): [(rnd.uniform(8, 92), rnd.uniform(8, 92), rnd.uniform(0.8, 1.6), rnd.uniform(0, 6.28))   # x, y within the window
                     for _ in range(3 if cy >= 1 else 0)] for cx in range(8) for cy in range(4)}
 CLOUDS = [(70, 170, 0), (150, 120, 1), (40, 95, 2)]     # y, width, lane index
 CLOUD_STEPS = 25                                        # frames for a cloud to cross the sky
@@ -64,15 +70,16 @@ def frame(cx, cy, step, still=False):
     draws only rects, circles and ellipses; a path, polygon, polyline or line you add is cut to each window and keeps
     its shape (references/scenes.md)."""
     cell = window(cx, cy)
+    W, H, HORIZON = window(7, 0)[2], window(0, 0)[3], window(0, 0)[1]       # the world's size; the horizon tops the ground row
     defs, e = [], []
     defs.append(f'<linearGradient id="sky" x1="0" y1="0" x2="0" y2="{n(HORIZON)}" gradientUnits="userSpaceOnUse">'
                 '<stop stop-color="#0B1033"/><stop offset="0.6" stop-color="#3A2A6B"/><stop offset="1" stop-color="#FF8A5C"/></linearGradient>')
-    e.append('<rect id="sky" x="-20" y="-20" width="840" height="340" fill="url(#sky)"/>')
+    e.append(f'<rect id="sky" x="-20" y="-20" width="{n(W + 40)}" height="{n(HORIZON + 40)}" fill="url(#sky)"/>')
     for i, (sx, sy, r, phase) in enumerate([] if still else STARS[(cx, cy)]):
-        e.append(f'<circle id="star{i}" cx="{n(sx)}" cy="{n(sy)}" r="{n(r)}" fill="#FFFFFF" fill-opacity="{n(0.5 + 0.5 * math.sin(step * 1.3 + phase))}"/>')
+        e.append(f'<circle id="star{i}" cx="{n(cell[0] + sx)}" cy="{n(cell[1] + sy)}" r="{n(r)}" fill="#FFFFFF" fill-opacity="{n(0.5 + 0.5 * math.sin(step * 1.3 + phase))}"/>')
 
     sun = (W / 2, HORIZON - 40 - 30 * math.sin(step * 0.15))                  # a sun that breathes above the horizon
-    if touches((sun[0] - 170, sun[1] - 170, sun[0] + 170, HORIZON + 40), cell):   # everywhere its halo can reach
+    if touches((sun[0] - 170, HORIZON - 70 - 170, sun[0] + 170, HORIZON + 40), cell):   # everywhere its halo can ever reach
         defs.append(f'<radialGradient id="halo" cx="{n(sun[0])}" cy="{n(sun[1])}" r="170" gradientUnits="userSpaceOnUse">'
                     '<stop stop-color="#FFD27A" stop-opacity="0.7"/><stop offset="1" stop-color="#FFD27A" stop-opacity="0"/></radialGradient>')
         # The halo moves with the sun under a world-space gradient. A few such movers per scene are fine; draw the rest
@@ -91,7 +98,7 @@ def frame(cx, cy, step, still=False):
     if cy == 0:                                                               # the ground row
         defs.append(f'<linearGradient id="ground" x1="0" y1="{n(HORIZON)}" x2="0" y2="{n(H)}" gradientUnits="userSpaceOnUse">'
                     '<stop stop-color="#2A1A4A"/><stop offset="1" stop-color="#05030F"/></linearGradient>')
-        e.append(f'<rect id="ground" x="-20" y="{n(HORIZON)}" width="840" height="120" fill="url(#ground)"/>')
+        e.append(f'<rect id="ground" x="-20" y="{n(HORIZON)}" width="{n(W + 40)}" height="{n(H - HORIZON + 20)}" fill="url(#ground)"/>')
         # The lines never stop moving, so each is a thin square-cornered <rect> FILLED with the gradient, never a <line>
         # with a gradient STROKE (references/svg-craft.md → Keeping the phone smooth).
         # User space, so one gradient runs across all eight windows of the row.
@@ -99,10 +106,10 @@ def frame(cx, cy, step, still=False):
                     '<stop stop-color="#FF5CA8"/><stop offset="0.5" stop-color="#5CE1FF"/><stop offset="1" stop-color="#FF5CA8"/></linearGradient>')
         for i in range(N_LINES):
             z, alpha = cycle(i, N_LINES, 0 if still else step, LINE_STEPS)
-            y = HORIZON + 115 * z ** 2.0                                      # perspective: lines spread towards the viewer; z = 1 is below the world's edge
+            y = HORIZON + (H - HORIZON + 15) * z ** 2.0                       # perspective: lines spread towards the viewer; z = 1 is below the world's edge
             width = 0.6 + 2.2 * z
-            e.append(f'<rect id="line{i}" x="-20" y="{n(y - width / 2)}" width="840" height="{n(width)}" fill="url(#line)" opacity="{n(alpha * min(1.0, z * 3))}"/>')
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{cell[0]} {cell[1]} 100 100"><defs>{"".join(defs)}</defs>{"".join(e)}</svg>'
+            e.append(f'<rect id="line{i}" x="-20" y="{n(y - width / 2)}" width="{n(W + 40)}" height="{n(width)}" fill="url(#line)" opacity="{n(alpha * min(1.0, z * 3))}"/>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{n(cell[0])} {n(cell[1])} 100 100"><defs>{"".join(defs)}</defs>{"".join(e)}</svg>'
 
 
 class Sender:
@@ -128,7 +135,7 @@ class Sender:
         return 0, ""
 
     def post(self, payload):
-        """True when the agent says "dropped": the phone is not reading fast enough — the loop slows down."""
+        """True when the agent says "dropped": the phone or the link to it does not keep up — the loop slows down."""
         status, text = self.call("POST", "/api/update-button", json.dumps(payload))
         if status == 400: sys.stderr.write(text[:300] + "\n")
         try:
@@ -136,17 +143,25 @@ class Sender:
         except Exception:
             return False
 
-    def on_screen(self, cells):
-        """False only when the phone SAYS none of these buttons is shown (another page, the app in the background).
-        Unknown — no phone, an older app — counts as shown. One cheap request per tick instead of 32 frames nobody sees."""
+    def view(self, cells):
+        """→ (shown, gap) from one cheap request per tick instead of 32 frames nobody sees. shown is False only when the
+        phone SAYS none of these buttons is shown (another page, the app in the background); unknown — no phone, an
+        older app — counts as shown. gap is 100 x cellGap / cellSize of the deck window holding these buttons (an iPad
+        may show several side by side, `windows`), None when the phone does not say."""
         try:
-            shown = (json.loads(self.call("GET", "/api/view")[1]).get("view") or {}).get("visibleCellIds")
+            view = json.loads(self.call("GET", "/api/view")[1]).get("view") or {}
         except Exception:
-            return True
-        return shown is None or not {c.upper() for c in cells}.isdisjoint(i.upper() for i in shown)
+            return True, None
+        mine = {c.upper() for c in cells}
+        holds = lambda grid: not mine.isdisjoint(i.upper() for i in grid.get("visibleCellIds") or [])
+        grid = next((w for w in view.get("windows") or [] if holds(w)), view)
+        size, gap = grid.get("cellSize"), grid.get("cellGap")
+        shown = view.get("visibleCellIds") is None or holds(view) or grid is not view
+        return shown, (100 * gap / size if size and gap is not None else None)
 
 
 def main():
+    global GAP
     sender = Sender()
     def stop(*_):
         for cell, _, _ in CELLS: sender.post({"cellId": cell, "svg": {"remove": True}})   # back to the saved faces
@@ -157,8 +172,10 @@ def main():
     step, paused, pace = 0, False, PERIOD
     while True:
         tick = time.time()
-        if not sender.on_screen([cell for cell, _, _ in CELLS]):              # the page is not on the phone's screen:
+        shown, gap = sender.view([cell for cell, _, _ in CELLS])
+        if not shown:                                                         # the page is not on the phone's screen:
             time.sleep(1.0); continue                                         # the world stands still, the Mac rests
+        if gap is not None: GAP = gap                                         # the buttons' spacing, for window()
         size = os.path.getsize(taps) if os.path.exists(taps) else 0
         if size != seen: seen, paused = size, not paused                      # every button of the page appends to this file on tap
         behind = False

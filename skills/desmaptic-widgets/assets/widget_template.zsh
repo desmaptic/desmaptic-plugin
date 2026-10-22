@@ -78,7 +78,7 @@ call() {   # PATH [BODY]
 }
 
 
-# → 0 when the frame was sent. dropped = 1 when the phone is not reading (the agent keeps the newest frame and
+# → 0 when the frame was sent. dropped = 1 when the phone does not keep up (the agent keeps the newest frame and
 # sends it later by itself).
 post() {
   dropped=0
@@ -107,7 +107,7 @@ main() {
         last=$pct sent_at=$SECONDS
       fi
     fi
-    (( dropped )) && sleep 4              # the phone is not reading: slow down until an answer comes without it
+    (( dropped )) && sleep 4              # the phone does not keep up: slow down until an answer comes without it
     sleep $pause
   done
 }

@@ -7,7 +7,7 @@ Such files usually work as they are: the engine reads what exports are made of â
 ## Procedure
 
 1. Get the document as text. Limit: 64 KB â€” export the icon's frame alone, without hidden elements; run it through an optimizer (SVGO) if it is large.
-2. Deliver it with `add_buttons_to_client` / `update_button_by_uuid`. The tool parses it first: a broken document fails with the line and the reason; whatever the engine will not draw comes back as **warnings in the result's `notes`**. Read them and tell the user what is missing, in their words.
+2. Deliver it with `add_buttons_to_client` / `update_buttons_by_uuid`. The tool parses it first: a broken document fails with the line and the reason; whatever the engine will not draw comes back as **warnings in the result's `notes`**. Read them and tell the user what is missing, in their words.
 3. Still set `label`, an icon and a `color`: the label names the button; the color is what `currentColor` resolves to.
 
 ## What an export can contain that is not drawn

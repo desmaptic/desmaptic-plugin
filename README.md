@@ -1,15 +1,16 @@
 # Desmaptic plugin for Claude Code and Codex
 
-Desmaptic turns an iPhone or iPad into a deck of buttons that control your Mac: launch apps, press
-keyboard shortcuts, run Shortcuts and scripts, and show live widgets such as CPU load, a timer or
-what's playing.
+[Desmaptic](https://desmaptic.com) turns the iPhone or iPad you already have into a deck of buttons
+for your Mac, like a Stream Deck. Its buttons launch apps, press keyboard shortcuts and run Shortcuts
+and scripts. Live widgets show things such as CPU load, a timer or what's playing.
 
 This plugin lets Claude Code and Codex work on that deck for you. Describe what you want — "a page
 for my video calls", "a button that shows free disk space", "move the music buttons to the second
 row" — and the assistant looks at the page on your phone, finds room, builds the buttons and sends
 them over. No button changes until you tap **Accept** on the phone, which shows you the change and
-the scripts it would run. The assistant cannot press your buttons and does not delete them: you do
-that on the phone.
+the scripts it would run. The exception is changes you let in without asking in the Desmaptic app
+(Accept Safe Changes, or a Mac you trust for a while). The assistant cannot press your buttons and
+does not delete them: you do that on the phone.
 
 ## What's inside
 
@@ -69,7 +70,7 @@ Then ask for something, for example: "Add a button that shows free disk space to
 The assistant runs them only when you call them. `page`, `widget` and `sessions-page` follow the same rules as any
 other request: before sending, the assistant tells you in plain words what the buttons will show and do and
 what their scripts run on the Mac, then sends the change once, and nothing changes until you tap
-**Accept** on the phone.
+**Accept** on the phone, unless you let such changes in without asking.
 
 In Codex, a plugin's hooks run only after you approve them in `/hooks`, and again after an update
 changes them: if `/hooks` lists Desmaptic hooks waiting for review, approve them there. `$desmaptic:setup`
@@ -143,8 +144,8 @@ folder `~/.claude/skills/desmaptic-widgets` or `~/.codex/skills/desmaptic-widget
   restart Claude Code or Codex.
 - **The tools answer that they cannot reach the agent** — open Desmaptic Agent (it lives in the
   menu bar).
-- **A change never appears on the phone** — open the Desmaptic app: every change waits there for
-  Accept.
+- **A change never appears on the phone** — open the Desmaptic app: a change waits there for
+  Accept, unless you let such changes in without asking.
 
 ## License
 

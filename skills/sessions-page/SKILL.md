@@ -26,7 +26,7 @@ Nothing is written until the page (or the Gallery's Long Jobs widget) is install
 
    The page goes into the active profile unless the user names another (`profileName`). On the free plan only pages one and two of a profile open: if the profile already has two, say the new page stays locked without Pro, or offer a profile with room.
 
-3. The user taps Accept on the phone. If the call comes back pending, the review is still open: call `get_delivery_status` later, never resend.
+3. The user taps Accept on the phone, unless they let such changes in without asking. If the call comes back pending, the review is still open: call `get_delivery_status` later, never resend.
 
 4. Once accepted, a session that does something shows up within a second. If the cards stay on "No session" after the user sends a prompt, check `get_startup_script_status` for the top-left card, and that the plugin is enabled in that session (its hooks load with the plugin; sessions started before the install pick them up after a restart). In Codex, also that the hooks are approved in `/hooks`.
 
